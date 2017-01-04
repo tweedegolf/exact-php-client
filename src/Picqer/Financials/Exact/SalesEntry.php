@@ -50,6 +50,7 @@ class SalesEntry extends Model
         'ExternalLinkDescription',
         'Description',
         'Status',
+        'StatusDescription',
         'PaymentCondition',
         'PaymentReference'
     ];
