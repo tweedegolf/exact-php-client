@@ -1,4 +1,6 @@
-<?php namespace Picqer\Financials\Exact;
+<?php
+
+namespace Picqer\Financials\Exact;
 
 /**
  * Class Document
@@ -13,6 +15,7 @@
  * @property Guid $Category ID of the category of this document
  * @property String $CategoryDescription Description of Category
  * @property Guid $Contact ID of the related contact of this document
+ * @property DateTime $Created Creation date
  * @property String $CreatorFullName Name of creator
  * @property Double $Currency Amount in the currency of the transaction
  * @property DateTime $DocumentDate Entry date of the incoming document
@@ -26,10 +29,10 @@
  * @property Int32 $ShopOrderNumber Number of the shop order
  * @property String $Subject Subject of this document
  * @property Int32 $Type ID of the type of this document
+ * @property String $TypeDescription Description of Type
  */
 class Document extends Model
 {
-
     use Query\Findable;
     use Persistance\Storable;
 
@@ -41,6 +44,7 @@ class Document extends Model
         'Category',
         'CategoryDescription',
         'Contact',
+        'Created',
         'CreatorFullName',
         'Currency',
         'DocumentDate',
@@ -53,9 +57,9 @@ class Document extends Model
         'SalesOrderNumber',
         'ShopOrderNumber',
         'Subject',
-        'Type',     
+        'Type',
+        'TypeDescription',
     ];
 
     protected $url = 'documents/Documents';
-
 }

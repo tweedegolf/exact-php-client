@@ -1,14 +1,49 @@
 <?php namespace Picqer\Financials\Exact\Persistance;
 
-trait Storable {
+use Picqer\Financials\Exact\Connection;
 
+trait Storable
+{
+    /**
+     * @return boolean
+     */
+    abstract function exists();
+
+    /**
+     * @param array $attributes
+     */
+    abstract function fill(array $attributes);
+
+    /**
+     * @param int $options
+     * @param bool $withDeferred
+     * @return string
+     */
+    abstract function json($options = 0, $withDeferred = false);
+
+    /**
+     * @return Connection
+     */
+    abstract function connection();
+
+    /**
+     * @return string
+     */
+    abstract function url();
+
+    /**
+     * @return mixed
+     */
+    abstract function primaryKeyContent();
+
+    /**
+     * @return $this
+     */
     public function save()
     {
-        if ($this->exists())
-        {
+        if ($this->exists()) {
             $this->fill($this->update());
-        } else
-        {
+        } else {
             $this->fill($this->insert());
         }
 
@@ -17,22 +52,20 @@ trait Storable {
 
     public function insert()
     {
-        return $this->connection()->post($this->url, $this->json(0, TRUE));
+        return $this->connection()->post($this->url(), $this->json(0, true));
     }
 
     public function update()
     {
-        $key = $this->primaryKey;
-        $primarykey = $this->$key;
+        $primaryKey = $this->primaryKeyContent();
 
-        return $this->connection()->put($this->url . "(guid'$primarykey')", $this->json());
+        return $this->connection()->put($this->url() . "(guid'$primaryKey')", $this->json());
     }
 
     public function delete()
     {
-        $key = $this->primaryKey;
-        $primarykey = $this->$key;
+        $primaryKey = $this->primaryKeyContent();
 
-        return $this->connection()->delete($this->url . "(guid'$primarykey')");
+        return $this->connection()->delete($this->url() . "(guid'$primaryKey')");
     }
 }

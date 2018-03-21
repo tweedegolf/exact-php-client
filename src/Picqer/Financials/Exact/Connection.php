@@ -1,4 +1,6 @@
-<?php namespace Picqer\Financials\Exact;
+<?php
+
+namespace Picqer\Financials\Exact;
 
 use Exception;
 use GuzzleHttp\Client;
@@ -80,7 +82,7 @@ class Connection
      * @var Client
      */
     private $client;
-    
+
     /**
      * @var callable(Connection)
      */
@@ -90,7 +92,6 @@ class Connection
      *
      */
     protected $middleWares = [];
-
 
     /**
     * @var
@@ -114,6 +115,7 @@ class Connection
         $this->client = new Client([
             'http_errors' => true,
             'handler' => $handlerStack,
+            'expect' => false,
         ]);
 
         return $this->client;
@@ -144,7 +146,7 @@ class Connection
     /**
      * @param string $method
      * @param $endpoint
-     * @param null $body
+     * @param mixed $body
      * @param array $params
      * @param array $headers
      * @return Request
@@ -154,7 +156,8 @@ class Connection
         // Add default json headers to the request
         $headers = array_merge($headers, [
             'Accept' => 'application/json',
-            'Content-Type' => 'application/json'
+            'Content-Type' => 'application/json',
+            'Prefer' => 'return=representation'
         ]);
 
         // If access token is not set or token has expired, acquire new token
@@ -181,21 +184,24 @@ class Connection
     /**
      * @param $url
      * @param array $params
+     * @param array $headers
      * @return mixed
      * @throws ApiException
      */
-    public function get($url, array $params = [])
+    public function get($url, array $params = [], array $headers = [])
     {
         $url = $this->formatUrl($url, $url !== 'current/Me', $url == $this->nextUrl);
 
         try {
-            $request = $this->createRequest('GET', $url, null, $params);
+            $request = $this->createRequest('GET', $url, null, $params, $headers);
             $response = $this->client()->send($request);
 
-            return $this->parseResponse($response);
+            return $this->parseResponse($response, $url != $this->nextUrl);
         } catch (Exception $e) {
             $this->parseExceptionForErrorMessages($e);
         }
+        
+        return null;
     }
 
     /**
@@ -216,6 +222,8 @@ class Connection
         } catch (Exception $e) {
             $this->parseExceptionForErrorMessages($e);
         }
+
+        return null;
     }
 
     /**
@@ -236,6 +244,8 @@ class Connection
         } catch (Exception $e) {
             $this->parseExceptionForErrorMessages($e);
         }
+
+        return null;
     }
 
     /**
@@ -255,6 +265,8 @@ class Connection
         } catch (Exception $e) {
             $this->parseExceptionForErrorMessages($e);
         }
+
+        return null;
     }
 
     /**
@@ -309,7 +321,6 @@ class Connection
         $this->refreshToken = $refreshToken;
     }
 
-
     /**
      *
      */
@@ -338,10 +349,11 @@ class Connection
 
     /**
      * @param Response $response
+     * @param bool $returnSingleIfPossible
      * @return mixed
      * @throws ApiException
      */
-    private function parseResponse(Response $response)
+    private function parseResponse(Response $response, $returnSingleIfPossible = true)
     {
         try {
 
@@ -360,7 +372,7 @@ class Connection
                 }
 
                 if (array_key_exists('results', $json['d'])) {
-                    if (count($json['d']['results']) == 1) {
+                    if ($returnSingleIfPossible && count($json['d']['results']) == 1) {
                         return $json['d']['results'][0];
                     }
 
@@ -439,9 +451,9 @@ class Connection
                 $this->accessToken  = $body['access_token'];
                 $this->refreshToken = $body['refresh_token'];
                 $this->tokenExpires = $this->getDateTimeFromExpires($body['expires_in']);
-                
+
                 if (is_callable($this->tokenUpdateCallback)) {
-                    call_user_func($this->tokenUpdateCallback, $this);                    
+                    call_user_func($this->tokenUpdateCallback, $this);
                 }
             } else {
                 throw new ApiException('Could not acquire tokens, json decode failed. Got response: ' . $response->getBody()->getContents());
@@ -450,7 +462,6 @@ class Connection
             throw new ApiException('Could not acquire or refresh tokens');
         }
     }
-
 
     private function getDateTimeFromExpires($expires)
     {
@@ -483,7 +494,7 @@ class Connection
             return true;
         }
 
-        return $this->tokenExpires <= time();
+        return $this->tokenExpires <= time() + 10;
     }
 
     private function formatUrl($endPoint, $includeDivision = true, $formatNextUrl = false)
@@ -523,14 +534,13 @@ class Connection
     {
         $this->division = $division;
     }
-    
+
     /**
      * @param callable $callback
      */
     public function setTokenUpdateCallback($callback) {
         $this->tokenUpdateCallback = $callback;
     }
-
 
     /**
      * Parse the reponse in the Exception to return the Exact error messages
