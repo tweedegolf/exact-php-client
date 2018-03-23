@@ -94,9 +94,15 @@ class Connection
     protected $middleWares = [];
 
     /**
-    * @var
-    */
+     * @var
+     */
     public $nextUrl = null;
+
+    /**
+     * @var callable(Connection)
+     */
+    private $requestCallback;
+
 
     /**
      * @return Client
@@ -175,6 +181,10 @@ class Connection
             $endpoint .= '?' . http_build_query($params);
         }
 
+        if (is_callable($this->requestCallback)) {
+            call_user_func($this->requestCallback, $method, $endpoint, $headers, $params);
+        }
+
         // Create the request
         $request = new Request($method, $endpoint, $headers, $body);
 
@@ -200,7 +210,7 @@ class Connection
         } catch (Exception $e) {
             $this->parseExceptionForErrorMessages($e);
         }
-        
+
         return null;
     }
 
@@ -275,10 +285,10 @@ class Connection
     public function getAuthUrl()
     {
         return $this->baseUrl . $this->authUrl . '?' . http_build_query(array(
-            'client_id' => $this->exactClientId,
-            'redirect_uri' => $this->redirectUrl,
-            'response_type' => 'code'
-        ));
+                'client_id' => $this->exactClientId,
+                'redirect_uri' => $this->redirectUrl,
+                'response_type' => 'code'
+            ));
     }
 
     /**
@@ -439,6 +449,10 @@ class Connection
                     'client_secret' => $this->exactClientSecret,
                 ]
             ];
+        }
+
+        if (is_callable($this->requestCallback)) {
+            call_user_func($this->requestCallback, 'POST', $this->getTokenUrl(), [], []);
         }
 
         $response = $this->client()->post($this->getTokenUrl(), $body);
@@ -624,5 +638,21 @@ class Connection
     public function setTokenUrl($tokenUrl)
     {
         $this->tokenUrl = $tokenUrl;
+    }
+
+    /**
+     * @return callable
+     */
+    public function getRequestCallback(): ?callable
+    {
+        return $this->requestCallback;
+    }
+
+    /**
+     * @param callable $requestCallback
+     */
+    public function setRequestCallback(callable $requestCallback): void
+    {
+        $this->requestCallback = $requestCallback;
     }
 }
