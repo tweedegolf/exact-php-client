@@ -39,6 +39,11 @@ class Connection
     private $tokenUrl = '/api/oauth2/token';
 
     /**
+     * @var string
+     */
+    private $lockFilePath = 'exact-refresh-lock';
+
+    /**
      * @var
      */
     private $exactClientId;
@@ -86,15 +91,25 @@ class Connection
     /**
      * @var callable(Connection)
      */
+    private $preTokenUpdateCallback;
+
+    /**
+     * @var callable(Connection)
+     */
     private $tokenUpdateCallback;
 
     /**
-     *
+     * @var callable(Connection);
+     */
+    private $updateTokensCallback;
+
+    /**
+     * @var array
      */
     protected $middleWares = [];
 
     /**
-     * @var
+     * @var string|null
      */
     public $nextUrl = null;
 
@@ -103,6 +118,21 @@ class Connection
      */
     private $requestCallback;
 
+    /**
+     * @var string|null
+     */
+    private $randomName;
+
+    public function __construct()
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_start();
+        }
+
+        // Every instance of the Connection gets a unique name
+        // to distinguish between PHP sessions.
+        $this->randomName = uniqid();
+    }
 
     /**
      * @return Client
@@ -132,6 +162,46 @@ class Connection
         $this->middleWares[] = $middleWare;
     }
 
+    private function waitForTokens()
+    {
+        // if it is, wait a second
+        // and check again if the token is good.
+        for ($x = 0; $x <= 5; $x +=1) {
+            $this->logToFile('Locked. Retry ' . $x);
+            sleep(5);
+
+            $data = call_user_func($this->updateTokensCallback, $this);
+            if (isset($data['accesstoken'])) {
+                $this->logToFile('Access token: ' . substr($data['accesstoken'], -4));
+            }
+            if (isset($data['refreshtoken'])) {
+                $this->logToFile('Refresh token: ' . substr($data['refreshtoken'], -4));
+            }
+
+            $end1 = substr($this->accessToken, -4);
+            $end2 = substr($this->refreshToken, -4);
+            $this->logToFile("Tokens are now: access: {$end1}, refresh: {$end2}");
+
+            if (!empty($this->accessToken) && !$this->tokenHasExpired()) {
+                $this->logToFile('New token found, stop waiting.');
+                break;
+            }
+        }
+
+        // Try it just one more time
+        if (empty($this->accessToken) && $this->tokenHasExpired()) {
+            call_user_func($this->updateTokensCallback, $this);
+            $end1 = substr($this->accessToken, -4);
+            $end2 = substr($this->refreshToken, -4);
+            $this->logToFile("Tokens are now: access: {$end1}, refresh: {$end2}");
+        }
+
+        if (empty($this->accessToken) || $this->tokenHasExpired()) {
+            $this->logToFile('Timeout while waiting for refresh token.');
+            throw new ApiException('Timout while waiting for the refresh request to unlock.');
+        }
+    }
+
     public function connect()
     {
         // Redirect for authorization if needed (no access token or refresh token given)
@@ -141,12 +211,116 @@ class Connection
 
         // If access token is not set or token has expired, acquire new token
         if (empty($this->accessToken) || $this->tokenHasExpired()) {
-            $this->acquireAccessToken();
+
+            // Check if token refresh is locked
+            if (!$this->refreshRequestIsLocked()) {
+                $this->logToFile('Getting token.');
+
+                $lock = $this->lockRefreshRequest();
+                if ($lock) {
+                    $this->acquireAccessToken();
+                } else {
+                    $this->waitForTokens();
+                }
+
+            } else {
+                $this->waitForTokens();
+            }
         }
 
         $client = $this->client();
 
         return $client;
+    }
+
+    /**
+     * Check if the refresh request is locked. This is done
+     * by checking if a temporary lock file exists.
+     *
+     * @return bool
+     */
+    private function refreshRequestIsLocked()
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'exact-refresh-lock';
+
+        if (file_exists($path)) {
+            $contents = file_get_contents($path);
+
+            $this->logToFile("File: " . $contents);
+            if (!isset($_SESSION['exact-file-lock'])) {
+                return true;
+            }
+
+            $this->logToFile("Session: " . $_SESSION['exact-file-lock']);
+
+            return $contents !== $_SESSION['exact-file-lock'];
+        }
+
+        return false;
+    }
+
+    /**
+     * Lock the refresh request.
+     */
+    private function lockRefreshRequest()
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'exact-refresh-lock';
+
+        if (!file_exists($path)) {
+
+            $file = fopen($path, 'w+');
+            if (flock($file, LOCK_EX|LOCK_NB)) {
+
+                fwrite($file, $this->randomName);
+                $this->logToFile('Locking request');
+                $_SESSION['exact-file-lock'] = $this->randomName;
+
+                flock($file, LOCK_UN);
+                fclose($file);
+
+            } else {
+                return false;
+            }
+
+        } else {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Unlock the refresh request.
+     */
+    private function unlockRefreshRequest()
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'exact-refresh-lock';
+        $this->logToFile('Unlocking request.');
+        unset($_SESSION['exact-file-lock']);
+
+        if (file_exists($path)) {
+            unlink($path);
+        } else {
+            throw new \Exception('Lockfile does not exist.');
+        }
+    }
+
+    private function logToFile($message)
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'exact.log';
+
+        $now = date('[Y-m-d H:i:s]');
+
+        $lockNumber = '?';
+        if (isset($_SESSION['exact-file-lock'])) {
+            $lockNumber = $_SESSION['exact-file-lock'];
+        }
+
+        $message = $now . '[' . $this->randomName. '][' . $lockNumber . ']: ' . $message . "\r\n";
+
+        $file = fopen($path, 'a');
+        fwrite($file, $message);
+        fclose($file);
     }
 
     /**
@@ -168,7 +342,21 @@ class Connection
 
         // If access token is not set or token has expired, acquire new token
         if (empty($this->accessToken) || $this->tokenHasExpired()) {
-            $this->acquireAccessToken();
+
+            // Check if token refresh is locked
+            if (!$this->refreshRequestIsLocked()) {
+                $this->logToFile('Getting token.');
+
+                $lock = $this->lockRefreshRequest();
+                if ($lock) {
+                    $this->acquireAccessToken();
+                } else {
+                    $this->waitForTokens();
+                }
+
+            } else {
+                $this->waitForTokens();
+            }
         }
 
         // If we have a token, sign the request
@@ -429,6 +617,9 @@ class Connection
 
     private function acquireAccessToken()
     {
+        // The file was locked before entering
+        // this function.
+
         // If refresh token not yet acquired, do token request
         if (empty($this->refreshToken)) {
             $body = [
@@ -441,6 +632,7 @@ class Connection
                 ]
             ];
         } else { // else do refresh token request
+
             $body = [
                 'form_params' => [
                     'refresh_token' => $this->refreshToken,
@@ -449,6 +641,10 @@ class Connection
                     'client_secret' => $this->exactClientSecret,
                 ]
             ];
+        }
+
+        if (is_callable($this->preTokenUpdateCallback)) {
+            call_user_func($this->preTokenUpdateCallback, $this, $body);
         }
 
         if (is_callable($this->requestCallback)) {
@@ -469,10 +665,25 @@ class Connection
                 if (is_callable($this->tokenUpdateCallback)) {
                     call_user_func($this->tokenUpdateCallback, $this);
                 }
+
+                $access = substr($this->accessToken, -4);
+                $refresh = substr($this->refreshToken, -4);
+                $this->logToFile("OK, new tokens ready, access: {$access}, refresh: {$refresh}");
+
+                // Clear the lock file.
+                $this->unlockRefreshRequest();
             } else {
+
+                // Clear the lock file.
+                $this->logToFile('ERROR: JSON decode failed');
+                $this->unlockRefreshRequest();
                 throw new ApiException('Could not acquire tokens, json decode failed. Got response: ' . $response->getBody()->getContents());
             }
         } else {
+
+            // Clear the lock file.
+            $this->logToFile('ERROR: Could not acquire / refresh the token.');
+            $this->unlockRefreshRequest();
             throw new ApiException('Could not acquire or refresh tokens');
         }
     }
@@ -554,6 +765,20 @@ class Connection
      */
     public function setTokenUpdateCallback($callback) {
         $this->tokenUpdateCallback = $callback;
+    }
+
+    /**
+     * @param callable $callback
+     */
+    public function setPreTokenUpdateCallback($callback) {
+        $this->preTokenUpdateCallback = $callback;
+    }
+
+    /**
+     * @param callable $callback
+     */
+    public function setUpdateTokensCallback($callback) {
+        $this->updateTokensCallback = $callback;
     }
 
     /**
