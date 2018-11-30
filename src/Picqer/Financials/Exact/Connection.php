@@ -256,10 +256,7 @@ class Connection
             $now = new \DateTime();
 
             if ($now && $modTime) {
-                $this->logToFile('Lock file time: ' . $modTime->format('Y-m-d H:i;s'));
-                $this->logTofile('Current time: ' . $now->format('Y-m-d H:i:s'));
                 $minutes = $now->diff($modTime)->format('%i');
-                $this->logToFile('Diff: ' . $minutes . ' minutes');
 
                 // If the lock file is old, delete it.
                 if ($minutes > 11) {
