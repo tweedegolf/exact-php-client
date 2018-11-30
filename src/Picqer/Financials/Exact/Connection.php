@@ -258,7 +258,9 @@ class Connection
             if ($now && $modTime) {
                 $this->logToFile('Lock file time: ' . $modTime->format('Y-m-d H:i;s'));
                 $this->logTofile('Current time: ' . $now->format('Y-m-d H:i:s'));
-                $this->logToFile('Diff: ' . $now->diff($modTime)->format('i') . ' minutes');
+                $minutes = $new->diff($modTime)->format('%i');
+
+                $this->logToFile('Diff: ' . $minutes . ' minutes');
             }
 
             // Check
