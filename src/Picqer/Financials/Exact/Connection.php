@@ -252,12 +252,14 @@ class Connection
 
             // Check the file age
             clearstatcache();
-            $modTime = filemtime($path);
+            $modTime = new \DateTime(filemtime($path));
             $now = new \DateTime();
 
-            $this->logToFile('Lock file time: ' . date('Y-m-d H:i:s', $modTime));
-            $this->logTofile('Current time: ' . date('Y-m-d H:i:s', $now));
-            $this->logToFile('Diff: ' . $now->diff($modTime)->format('i') . ' minutes');
+            if ($now && $modTime) {
+                $this->logToFile('Lock file time: ' . $modTime->format('Y-m-d H:i;s'));
+                $this->logTofile('Current time: ' . $now->format('Y-m-d H:i:s'));
+                $this->logToFile('Diff: ' . $now->diff($modTime)->format('i') . ' minutes');
+            }
 
             // Check
             $contents = file_get_contents($path);
