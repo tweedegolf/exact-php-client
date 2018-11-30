@@ -162,6 +162,11 @@ class Connection
         $this->middleWares[] = $middleWare;
     }
 
+    /**
+     * Another process is fetching new refresh tokens,
+     * so wait for a while and check is new tokens have been
+     * fetched in the meantime. Otherwise throw an Exception.
+     */
     private function waitForTokens()
     {
         // if it is, wait a second
@@ -244,9 +249,18 @@ class Connection
         $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'exact-refresh-lock';
 
         if (file_exists($path)) {
-            $contents = file_get_contents($path);
 
-            $this->logToFile("File: " . $contents);
+            // Check the file age
+            clearstatcache();
+            $modTime = filemtime($path);
+            $now = new \DateTime();
+
+            $this->logToFile('Lock file time: ' . date('Y-m-d H:i:s', $modTime));
+            $this->logTofile('Current time: ' . date('Y-m-d H:i:s', $now));
+            $this->logToFile('Diff: ' . $now->diff($modTime)->format('i') . ' minutes');
+
+            // Check
+            $contents = file_get_contents($path);
             if (!isset($_SESSION['exact-file-lock'])) {
                 return true;
             }
@@ -260,7 +274,9 @@ class Connection
     }
 
     /**
-     * Lock the refresh request.
+     * Lock the refresh request. Make sure we can get an exclusive lock
+     * on the file, to prevent another process from also writing to this
+     * file at the same time.
      */
     private function lockRefreshRequest()
     {
@@ -274,7 +290,6 @@ class Connection
                 fwrite($file, $this->randomName);
                 $this->logToFile('Locking request');
                 $_SESSION['exact-file-lock'] = $this->randomName;
-
                 flock($file, LOCK_UN);
                 fclose($file);
 
@@ -287,6 +302,21 @@ class Connection
         }
 
         return true;
+    }
+
+    /**
+     * Reset the refresh lock, to clear the lock in the
+     * even of an exception, like a timeout other error while connecting.
+     */
+    public function resetRefreshLock()
+    {
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'exact-refresh-lock';
+        $this->logToFile('Unlocking request.');
+        unset($_SESSION['exact-file-lock']);
+
+        if (file_exists($path)) {
+            unlink($path);
+        }
     }
 
     /**
@@ -305,6 +335,12 @@ class Connection
         }
     }
 
+    /**
+     * For debugging purposes, write to an exact log file
+     * in the temporary path.
+     *
+     * TODO: Remove after extensive testing.
+     */
     private function logToFile($message)
     {
         $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'exact.log';
