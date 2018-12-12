@@ -250,17 +250,25 @@ class Connection
 
         if (file_exists($path)) {
 
-            // Check the file age
-            clearstatcache();
-            $modTime = new \DateTime(filemtime($path));
-            $now = new \DateTime();
+            try {
+                // Check the file age
+                clearstatcache();
+                $modTime = date('U', filemtime($path));
+                $now = new \DateTime();
+
+            } catch (\Exception $e) {
+                $this->logToFile('Exception while checking age of lock file, delete and try again. Exception: ' . $e->getMessage(););
+                $this->resetRefreshLock();
+
+                return false;
+            }
 
             if ($now && $modTime) {
                 $minutes = $now->diff($modTime)->format('%i');
 
                 // If the lock file is old, delete it.
                 if ($minutes > 11) {
-                    $this->logToFile('Lock file is : ' . $minutes . ' minutes old, delete and try again.');
+                    $this->logToFile('Lock file is: ' . $minutes . ' minutes old, delete and try again.');
                     $this->resetRefreshLock();
                     return false;
                 }
