@@ -257,7 +257,7 @@ class Connection
                 $now = new \DateTime();
 
             } catch (\Exception $e) {
-                $this->logToFile('Exception while checking age of lock file, delete and try again. Exception: ' . $e->getMessage(););
+                $this->logToFile('Exception while checking age of lock file, delete and try again. Exception: ' . $e->getMessage());
                 $this->resetRefreshLock();
 
                 return false;
