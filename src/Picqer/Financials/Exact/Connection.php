@@ -253,7 +253,7 @@ class Connection
             try {
                 // Check the file age
                 clearstatcache();
-                $modTime = date('U', filemtime($path));
+                $modTime = date_create_from_format('U', filemtime($path));
                 $now = new \DateTime();
 
             } catch (\Exception $e) {
