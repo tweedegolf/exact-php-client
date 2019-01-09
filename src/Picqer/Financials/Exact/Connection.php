@@ -345,8 +345,6 @@ class Connection
 
         if (file_exists($path)) {
             unlink($path);
-        } else {
-            throw new \Exception('Lockfile does not exist.');
         }
     }
 
